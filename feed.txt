@@ -1,0 +1,15 @@
+https://rss.nytimes.com/services/xml/rss/nyt/Technology.xml
+https://news.ycombinator.com/rss
+https://www.reddit.com/r/technology/top.rss?t=day
+http://rss.slashdot.org/Slashdot/slashdotMain
+https://www.theverge.com/rss/tech/index.xml
+https://techcrunch.com/feed/
+https://www.theguardian.com/us/technology/rss
+https://feeds.arstechnica.com/arstechnica/technology-lab
+https://www.reutersagency.com/feed/?best-topics=tech&post_type=best
+https://feeds.a.dj.com/rss/RSSWSJD.xml
+https://www.ft.com/technology?format=rss
+https://rss.nytimes.com/services/xml/rss/nyt/World.xml
+https://www.reddit.com/r/artificial/
+http://www.reddit.com/r/MachineLearning/.rss
+https://deepmind.com/blog/feed/basic/

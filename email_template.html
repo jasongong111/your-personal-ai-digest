@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Your Daily Digest</title>
+  <style>
+    body {
+      margin: 0;
+      padding: 20px;
+      font-family: Georgia, 'Times New Roman', serif;
+      background: #ffffff;
+      color: #000000;
+      line-height: 1.5;
+    }
+    .container {
+      max-width: 600px;
+      margin: 0 auto;
+    }
+    .header {
+      border-bottom: 3px solid #000;
+      padding-bottom: 10px;
+      margin-bottom: 30px;
+    }
+    .header h1 {
+      margin: 0;
+      font-size: 24px;
+      font-weight: bold;
+    }
+    .date {
+      font-size: 14px;
+      color: #666;
+      margin-top: 5px;
+    }
+    .hero {
+      margin-bottom: 30px;
+    }
+    .hero h2 {
+      margin: 0 0 10px 0;
+      font-size: 28px;
+      font-weight: bold;
+    }
+    .hero p {
+      margin: 0 0 15px 0;
+      font-size: 16px;
+    }
+    .meta {
+      font-size: 12px;
+      color: #666;
+      margin-bottom: 20px;
+    }
+    .divider {
+      height: 2px;
+      background: #000;
+      margin: 30px 0;
+    }
+    .more h3 {
+      margin: 0 0 20px 0;
+      font-size: 18px;
+      font-weight: bold;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+    }
+    .article {
+      margin-bottom: 20px;
+    }
+    .article h4 {
+      margin: 0 0 5px 0;
+      font-size: 18px;
+      font-weight: bold;
+    }
+    .article p {
+      margin: 0 0 5px 0;
+      font-size: 14px;
+    }
+    .article a {
+      color: #000;
+      text-decoration: underline;
+    }
+    .footer {
+      margin-top: 40px;
+      padding-top: 20px;
+      border-top: 1px solid #ccc;
+      font-size: 12px;
+      color: #666;
+      text-align: center;
+    }
+    .footer a {
+      color: #666;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <!-- Header -->
+    <div class="header">
+      <h1>Your AI Digest</h1>
+      <div class="date">{{DATE}}</div>
+    </div>
+
+    <!-- Hero Story -->
+    <div class="hero">
+      <h2>{{HERO_TITLE}}</h2>
+      <p class="meta">{{HERO_SOURCE}} • {{HERO_TIME}}</p>
+      {{HERO_IMAGE}}
+      <p>{{HERO_SUMMARY}}</p>
+      <p><a href="{{HERO_URL}}">Read full article →</a></p>
+    </div>
+
+    <div class="divider"></div>
+
+    <!-- More Stories -->
+    <div class="more">
+      <h3>What Else We're Reading</h3>
+      {{ARTICLES}}
+    </div>
+
+    <!-- Footer -->
+    <div class="footer">
+      <p>Curated by your AI pipeline • <a href="#">Unsubscribe</a></p>
+    </div>
+  </div>
+</body>
+</html>
+

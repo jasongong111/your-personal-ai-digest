@@ -1,0 +1,4 @@
+Evaluate this article title for relevance to {topics} topics. If relevant, provide a structured summary. If not relevant, respond with "IRRELEVANT".
+
+Article title: {title}
+
