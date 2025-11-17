@@ -4,7 +4,7 @@ An automated, AI-powered RSS feed aggregator that curates and summarizes news ar
 
 ## Features
 
-- 🤖 **AI-Powered Filtering**: Uses DeepSeek AI to evaluate article relevance and generate structured summaries
+- 🤖 **AI-Powered Filtering**: Uses any AI API provider to evaluate article relevance and generate structured summaries
 - 📰 **Multi-Source Aggregation**: Fetches articles from multiple RSS feeds simultaneously
 - 🔐 **Authenticated Feeds**: Supports API keys, Basic Auth, Bearer tokens, and custom headers for paid/private feeds
 - 📧 **Email Delivery**: Optional email delivery via MailerSend (HTML + text versions)
@@ -86,7 +86,7 @@ MY_TOPICS = ['AI', 'machine learning', 'technology', 'finance']
 Go to your repository Settings → Secrets and variables → Actions, and add:
 
 **Required:**
-- `DEEPSEEK_API_KEY`: Your DeepSeek API key ([Get one here](https://platform.deepseek.com/))
+- `DEEPSEEK_API_KEY`: Your AI API key (works with DeepSeek, OpenAI, Anthropic, or any OpenAI-compatible API provider)
 
 **Optional (for email delivery):**
 - `MAILERSEND_API_KEY`: Your MailerSend API key
@@ -94,6 +94,10 @@ Go to your repository Settings → Secrets and variables → Actions, and add:
 - `EMAIL_FROM_NAME`: Sender name
 - `EMAIL_TO`: Recipient email address
 - `EMAIL_TO_NAME`: Recipient name
+
+**Important**: Before setting up email delivery, you need to:
+1. Set up your own SMTP server (or use MailerSend's SMTP service)
+2. Verify your domain with your email service provider (required for sending emails)
 
 ### 7. Configure Schedule (Optional)
 
@@ -105,6 +109,11 @@ schedule:
 ```
 
 ### 8. Enable Email Delivery (Optional)
+
+**Prerequisites for Email Delivery:**
+- You must set up your own SMTP server or use a service like MailerSend
+- Your sending domain must be verified with your email service provider
+- Ensure your domain has proper SPF, DKIM, and DMARC records configured
 
 To enable email delivery, ensure the email step is enabled in the workflow (line 249):
 
@@ -149,21 +158,23 @@ The digest format is controlled by:
 
 ### Using a Different AI Provider
 
-The workflow currently uses DeepSeek. To use OpenAI or another provider:
+The workflow is configured to work with DeepSeek by default, but you can use any AI API provider that supports OpenAI-compatible endpoints (OpenAI, Anthropic, etc.). To switch providers:
 
 1. Change the `base_url` in the workflow (line 137)
-2. Update the API key secret name
+2. Update the API key secret name (or keep `DEEPSEEK_API_KEY` and just use a different provider's key)
 3. Adjust the model name (line 147)
 
 Example for OpenAI:
 ```python
 client = OpenAI(
-    api_key=os.environ['OPENAI_API_KEY'],
+    api_key=os.environ['DEEPSEEK_API_KEY'],  # Can use any API key variable name
     base_url='https://api.openai.com/v1'
 )
 # ...
 model='gpt-4'
 ```
+
+**Note**: You can use any AI API key you prefer - just set the `DEEPSEEK_API_KEY` secret with your chosen provider's API key and update the `base_url` and `model` accordingly.
 
 ### Customizing Email Template
 
@@ -185,7 +196,7 @@ You can also run the digest generation locally:
 # Install dependencies
 pip install feedparser openai mailersend
 
-# Set environment variable
+# Set environment variable (use any AI API key)
 export DEEPSEEK_API_KEY="your-api-key"
 
 # Run the Python scripts manually (extract from workflow)
@@ -199,23 +210,6 @@ The digest includes:
 - **Additional Articles**: Up to 9 more relevant articles with summaries
 - **Structured Format**: Each article includes TOPIC, EVENT, IMPACT, and DATA fields
 
-## Troubleshooting
-
-### Feeds Not Fetching
-- Check that feed URLs in `feed.txt` are valid and accessible
-- For authenticated feeds, verify credentials in `feed_credentials.json`
-- Check GitHub Actions logs for specific error messages
-
-### AI Filtering Too Strict/Loose
-- Adjust `MY_TOPICS` list to be more/less specific
-- Modify `ai_system_prompt.txt` to change relevance criteria
-- Check AI response format matches expectations
-
-### Email Not Sending
-- Verify all email-related secrets are set in GitHub
-- Check MailerSend API key is valid
-- Review workflow logs for email sending errors
-
 ## Contributing
 
 Contributions are welcome! Please feel free to submit a Pull Request.
@@ -227,7 +221,7 @@ This project is open source and available under the [MIT License](LICENSE).
 ## Acknowledgments
 
 - Built with [feedparser](https://pypi.org/project/feedparser/) for RSS parsing
-- AI powered by [DeepSeek](https://www.deepseek.com/)
+- AI powered by any OpenAI-compatible API provider (DeepSeek, OpenAI, Anthropic, etc.)
 - Email delivery via [MailerSend](https://www.mailersend.com/)
 - Automated with [GitHub Actions](https://github.com/features/actions)
 
