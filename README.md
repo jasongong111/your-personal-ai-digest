@@ -36,7 +36,6 @@ cd your-personal-ai-digest
 Edit `feed.txt` and add your RSS feed URLs (one per line):
 
 ```
-https://rss.nytimes.com/services/xml/rss/nyt/Technology.xml
 https://news.ycombinator.com/rss
 https://www.reddit.com/r/technology/top.rss?t=day
 ```
