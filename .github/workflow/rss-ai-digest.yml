@@ -1,0 +1,297 @@
+name: Daily AI News Digest
+
+on:
+  schedule:
+    # Run at 8 AM UTC every weekday
+    - cron: '0 8 * * 1-5'
+  workflow_dispatch:  # Manual trigger button
+
+jobs:
+  fetch-and-summarize:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write  # Allow writing to repository
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: |
+          pip install feedparser openai mailersend
+
+      - name: Fetch RSS feeds
+        run: |
+          python -c "
+          import feedparser
+          import json
+          import os
+          import base64
+          from urllib.request import Request, urlopen
+          
+          # Load feed credentials if file exists
+          feed_creds = {}
+          if os.path.exists('feed_credentials.json'):
+              with open('feed_credentials.json', 'r') as f:
+                  creds_data = json.load(f)
+                  feed_creds = creds_data.get('feeds', {})
+          
+          urls = [line.strip() for line in open('feed.txt').readlines() if line.strip()]
+          articles = []
+          
+          for url in urls:
+              try:
+                  # Check if this feed has credentials
+                  feed_config = feed_creds.get(url, {})
+                  auth_type = feed_config.get('auth_type')
+                  
+                  # Prepare headers for authenticated feeds
+                  headers = {}
+                  if auth_type == 'api_key':
+                      headers[feed_config.get('header_name', 'X-API-Key')] = feed_config.get('api_key', '')
+                  elif auth_type == 'basic':
+                      username = feed_config.get('username', '')
+                      password = feed_config.get('password', '')
+                      auth_string = base64.b64encode(f'{username}:{password}'.encode()).decode()
+                      headers['Authorization'] = f'Basic {auth_string}'
+                  elif auth_type == 'bearer':
+                      headers['Authorization'] = f'Bearer {feed_config.get(\"token\", \"\")}'
+                  elif auth_type == 'custom_header':
+                      headers.update(feed_config.get('headers', {}))
+                  
+                  # Fetch feed with authentication if needed
+                  if headers:
+                      # Use feedparser with custom headers
+                      feed = feedparser.parse(url, request_headers=headers)
+                  else:
+                      # No authentication needed
+                      feed = feedparser.parse(url)
+                  
+                  # Process entries
+                  for entry in feed.entries[:5]:  # Top 5 per feed
+                      # Extract image from various RSS formats
+                      image_url = None
+                      
+                      # Try media:content (common in RSS)
+                      if hasattr(entry, 'media_content') and entry.media_content:
+                          image_url = entry.media_content[0].get('url')
+                      
+                      # Try media:thumbnail
+                      elif hasattr(entry, 'media_thumbnail') and entry.media_thumbnail:
+                          image_url = entry.media_thumbnail[0].get('url')
+                      
+                      # Try enclosure (podcasts/media)
+                      elif hasattr(entry, 'enclosures') and entry.enclosures:
+                          for enc in entry.enclosures:
+                              if enc.get('type', '').startswith('image/'):
+                                  image_url = enc.get('href')
+                                  break
+                      
+                      # Try looking in content/description for img tags
+                      if not image_url:
+                          import re
+                          content = entry.get('content', [{}])[0].get('value', '') if hasattr(entry, 'content') else entry.get('description', '')
+                          img_match = re.search(r'<img[^>]+src=[\\\"\\']([^\\\"\\'>]+)[\\\"\\']', content)
+                          if img_match:
+                              image_url = img_match.group(1)
+                      
+                      # Create article dict with image
+                      article = dict(entry)
+                      article['image_url'] = image_url
+                      articles.append(article)
+              except Exception as e:
+                  print(f'Error fetching feed {url}: {e}')
+                  continue
+          
+          # Save to file
+          with open('articles.json', 'w') as f:
+              json.dump(articles, f)
+          "
+
+      - name: AI Summarize & Filter
+        env:
+          DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
+        run: |
+          python -c "
+          import json, os
+          from datetime import datetime
+          from openai import OpenAI
+          with open('articles.json') as f: articles = json.load(f)
+          
+          # YOUR INTERESTS (customize what you care about)
+          MY_TOPICS = ['AI', 'machine learning', 'technology', 'finance']
+          
+          # Format topics as comma-separated string for prompts
+          topics_str = ', '.join(MY_TOPICS)
+          
+          # Load AI prompts from files and inject topics
+          with open('ai_system_prompt.txt', 'r') as f:
+              system_prompt = f.read().strip().format(topics=topics_str)
+          with open('ai_prompt.txt', 'r') as f:
+              prompt_template = f.read().strip()
+          
+          client = OpenAI(
+              api_key=os.environ['DEEPSEEK_API_KEY'],
+              base_url='https://api.deepseek.com'
+          )
+          filtered = []
+          
+          for a in articles:
+              # Simple relevance check (pre-filter)
+              if any(t.lower() in (a['title'] + a.get('summary','')).lower() for t in MY_TOPICS):
+                  # Summarize using prompt template
+                  user_message = prompt_template.format(title=a['title'], topics=topics_str)
+                  resp = client.chat.completions.create(
+                      model='deepseek-chat',
+                      messages=[
+                          {'role':'system','content':system_prompt},
+                          {'role':'user','content':user_message}
+                      ],
+                      max_tokens=150  # Increased for structured format
+                  )
+                  ai_response = resp.choices[0].message.content.strip()
+                  
+                  # Skip if AI marked as irrelevant
+                  if ai_response.upper() == 'IRRELEVANT':
+                      continue
+                  
+                  filtered.append({
+                      'title': a['title'],
+                      'url': a['link'],
+                      'summary': ai_response,
+                      'image_url': a.get('image_url')
+                  })
+          
+          # Create digests directory if it doesn't exist
+          os.makedirs('digests', exist_ok=True)
+          
+          # Generate filename with date and time
+          timestamp = datetime.utcnow().strftime('%Y-%m-%d-%H-%M')
+          md_filename = f'digests/{timestamp}.md'
+          html_filename = f'digests/{timestamp}.html'
+          
+          # Save markdown digest
+          with open(md_filename, 'w') as f:
+              f.write('# Your Daily Digest\\n\\n')
+              for item in filtered[:10]:  # Top 10
+                  f.write(f'## {item[\"title\"]}\\n{item[\"summary\"]}\\n{item[\"url\"]}\\n\\n')
+          
+          # Generate HTML email from template
+          with open('email_template.html', 'r') as f:
+              html_template = f.read()
+          
+          # Format date
+          date_str = datetime.utcnow().strftime('%A, %B %d, %Y')
+          
+          # Prepare hero article (first one)
+          hero = filtered[0] if filtered else {'title':'No articles','url':'#','summary':'No relevant articles found today.','image_url':None}
+          
+          # Extract source from URL (simplified)
+          import re
+          def get_source(url):
+              match = re.search(r'https?://([^/]+)', url)
+              return match.group(1).replace('www.', '') if match else 'Unknown'
+          
+          hero_source = get_source(hero['url'])
+          hero_time = datetime.utcnow().strftime('%H:%M UTC')
+          
+          # Add hero image if available
+          hero_image_html = ''
+          if hero.get('image_url'):
+              hero_image_html = f'<img src=\"{hero[\"image_url\"]}\" style=\"max-width:100%;height:auto;margin:15px 0;border-radius:4px;\" alt=\"{hero[\"title\"]}\">'
+          
+          # Build remaining articles HTML
+          articles_html = ''
+          for item in filtered[1:10]:  # Articles 2-10
+              source = get_source(item['url'])
+              time = datetime.utcnow().strftime('%H:%M UTC')
+              # Add image if available
+              img_html = ''
+              if item.get('image_url'):
+                  img_html = f'<img src=\"{item[\"image_url\"]}\" style=\"max-width:100%;height:auto;margin:10px 0;border-radius:4px;\" alt=\"{item[\"title\"]}\">'
+              article_html = f'<div class=\"article\">{img_html}<h4><a href=\"{item[\"url\"]}\">{item[\"title\"]}</a></h4><p>{item[\"summary\"]}</p><p class=\"meta\">{source} • {time}</p></div>'
+              articles_html += article_html
+          
+          # Replace template variables
+          html_content = html_template.replace('{{DATE}}', date_str)
+          html_content = html_content.replace('{{HERO_TITLE}}', hero['title'])
+          html_content = html_content.replace('{{HERO_SOURCE}}', hero_source)
+          html_content = html_content.replace('{{HERO_TIME}}', hero_time)
+          html_content = html_content.replace('{{HERO_IMAGE}}', hero_image_html)
+          html_content = html_content.replace('{{HERO_SUMMARY}}', hero['summary'])
+          html_content = html_content.replace('{{HERO_URL}}', hero['url'])
+          html_content = html_content.replace('{{ARTICLES}}', articles_html)
+          
+          # Save HTML digest
+          with open(html_filename, 'w') as f:
+              f.write(html_content)
+          
+          # Save filenames for next steps
+          with open('digest_filename.txt', 'w') as f:
+              f.write(md_filename)
+          with open('digest_html_filename.txt', 'w') as f:
+              f.write(html_filename)
+          "
+
+      - name: Commit digest
+        run: |
+          git config --local user.email "action@github.com"
+          git config --local user.name "GitHub Action"
+          digest_file=$(cat digest_filename.txt)
+          html_file=$(cat digest_html_filename.txt)
+          git add "$digest_file" "$html_file"
+          git commit -m "Update daily digest: $(basename $digest_file)" || exit 0
+          git push
+
+      - name: "Optional: Email digest"
+        if: true
+        env:
+          MAILERSEND_API_KEY: ${{ secrets.MAILERSEND_API_KEY }}
+          EMAIL_FROM: ${{ secrets.EMAIL_FROM }}
+          EMAIL_FROM_NAME: ${{ secrets.EMAIL_FROM_NAME }}
+          EMAIL_TO: ${{ secrets.EMAIL_TO }}
+          EMAIL_TO_NAME: ${{ secrets.EMAIL_TO_NAME }}
+        run: |
+          python -c "
+          import os
+          from mailersend import MailerSendClient, EmailBuilder
+          
+          # Read HTML digest filename and content
+          with open('digest_html_filename.txt', 'r') as f:
+              html_file = f.read().strip()
+          with open(html_file, 'r') as f:
+              html_content = f.read()
+          
+          # Read markdown for text version
+          with open('digest_filename.txt', 'r') as f:
+              md_file = f.read().strip()
+          with open(md_file, 'r') as f:
+              text_content = f.read()
+          
+          # Initialize MailerSend client
+          ms = MailerSendClient(api_key=os.environ['MAILERSEND_API_KEY'])
+          
+          # Build email with HTML content
+          email = (EmailBuilder()
+                   .from_email(os.environ['EMAIL_FROM'], os.environ['EMAIL_FROM_NAME'])
+                   .to_many([{'email': os.environ['EMAIL_TO'], 'name': os.environ['EMAIL_TO_NAME']}])
+                   .subject('Your Daily AI Digest')
+                   .html(html_content)
+                   .text(text_content)
+                   .build())
+          
+          # Send email
+          response = ms.emails.send(email)
+          # Convert response to dictionary to access message ID
+          response_dict = response.to_dict()
+          message_id = response_dict.get('data', {}).get('id')
+          if message_id:
+              print(f'Email sent successfully. Message ID: {message_id}')
+          else:
+              print('Email sent successfully')
+          "
