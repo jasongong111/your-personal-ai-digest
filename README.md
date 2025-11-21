@@ -67,12 +67,29 @@ Example:
 }
 ```
 
-### 4. Customize Your Topics
+### 4. Configure Topics and Limits
 
-Edit `.github/workflows/rss-ai-digest.yml` and modify the `MY_TOPICS` list (around line 133):
+Copy the example configuration file:
 
-```python
-MY_TOPICS = ['AI', 'machine learning', 'technology', 'finance']
+```bash
+cp config.json.example config.json
+```
+
+Edit `config.json` to customize your topics and limits:
+
+```json
+{
+  "topics": [
+    "AI",
+    "machine learning",
+    "technology",
+    "finance"
+  ],
+  "limits": {
+    "articles_per_feed": 10,
+    "final_digest_count": 10
+  }
+}
 ```
 
 ### 5. Customize AI Prompts (Optional)
@@ -133,9 +150,12 @@ your-personal-ai-digest/
 │   └── YYYY-MM-DD-HH-MM.html    # HTML digests
 ├── ai_prompt.txt                 # User prompt template
 ├── ai_system_prompt.txt          # System prompt for AI
+├── config.json.example           # Example configuration file
 ├── email_template.html           # HTML email template
 ├── feed.txt                      # RSS feed URLs
 ├── feed_credentials.json.example # Example credentials file
+├── fetch_feeds.py                # Script to fetch RSS feeds
+├── generate_digest.py            # Script to generate digest using AI
 └── README.md                     # This file
 ```
 
@@ -143,30 +163,26 @@ your-personal-ai-digest/
 
 ### Changing Topics
 
-Edit the `MY_TOPICS` list in `.github/workflows/rss-ai-digest.yml`:
-
-```python
-MY_TOPICS = ['AI', 'machine learning', 'technology', 'finance']
-```
+Edit `config.json` to modify your interests and limits.
 
 ### Modifying Digest Format
 
 The digest format is controlled by:
-- **Markdown**: Generated in the "AI Summarize & Filter" step (lines 176-179)
-- **HTML**: Uses `email_template.html` with template variables
+- **Markdown**: Generated in `generate_digest.py`
+- **HTML**: Uses `email_template.html` with template variables populated in `generate_digest.py`
 
 ### Using a Different AI Provider
 
-The workflow is configured to work with DeepSeek by default, but you can use any AI API provider that supports OpenAI-compatible endpoints (OpenAI, Anthropic, etc.). To switch providers:
+The project is configured to work with DeepSeek by default, but you can use any AI API provider that supports OpenAI-compatible endpoints (OpenAI, Anthropic, etc.). To switch providers:
 
-1. Change the `base_url` in the workflow (line 137)
-2. Update the API key secret name (or keep `DEEPSEEK_API_KEY` and just use a different provider's key)
-3. Adjust the model name (line 147)
+1. Edit `generate_digest.py`
+2. Update the `client` initialization with your provider's `base_url`
+3. Update the `model` parameter in the `client.chat.completions.create` call
 
 Example for OpenAI:
 ```python
 client = OpenAI(
-    api_key=os.environ['DEEPSEEK_API_KEY'],  # Can use any API key variable name
+    api_key=os.environ['DEEPSEEK_API_KEY'],
     base_url='https://api.openai.com/v1'
 )
 # ...
@@ -189,17 +205,20 @@ Edit `email_template.html` to change the email design. Template variables:
 
 ## Running Locally
 
-You can also run the digest generation locally:
+You can run the digest generation locally:
 
 ```bash
 # Install dependencies
-pip install feedparser openai mailersend
+pip install feedparser requests openai python-dateutil mailersend
 
 # Set environment variable (use any AI API key)
 export DEEPSEEK_API_KEY="your-api-key"
 
-# Run the Python scripts manually (extract from workflow)
-# Or trigger the workflow manually via GitHub Actions UI
+# 1. Fetch Feeds
+python fetch_feeds.py
+
+# 2. Generate Digest
+python generate_digest.py
 ```
 
 ## Example Output

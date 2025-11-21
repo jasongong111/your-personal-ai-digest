@@ -1,18 +1,18 @@
 name: Daily AI News Digest
 
 on:
-  schedule:
+  # schedule:
     # Run at 7 AM Hong Kong time (UTC+8) every day
     # 7 AM HKT = 23:00 UTC (previous day)
     # Note: GitHub Actions scheduled workflows may be delayed by up to 15 minutes
     # If workflows don't run, ensure the repository has recent activity
-    - cron: '0 23 * * *'
+    # - cron: '0 23 * * *'
   workflow_dispatch:  # Manual trigger button
-  push:
-    branches:
-      - main
-    paths:
-      - '.github/workflows/rss-ai-digest.yml'
+  # push:
+    # branches:
+      # - main
+    # paths:
+      # - '.github/workflows/rss-ai-digest.yml'
 
 jobs:
   fetch-and-summarize:
@@ -31,326 +31,24 @@ jobs:
 
       - name: Install dependencies
         run: |
-          pip install feedparser openai mailersend
+          pip install feedparser requests openai python-dateutil mailersend
+
+      - name: Setup Config
+        run: |
+          # Create a temporary config.json if not exists to ensure consistent behavior
+          if [ ! -f config.json ]; then
+            echo '{"topics": ["AI", "machine learning", "technology", "startup", "finance", "China", "US"], "limits": {"final_digest_count": 10, "articles_per_feed": 5}}' > config.json
+          fi
 
       - name: Fetch RSS feeds
         run: |
-          python -c "
-          import feedparser
-          import json
-          import os
-          import base64
-          from urllib.request import Request, urlopen
-          
-          # Load feed credentials if file exists
-          feed_creds = {}
-          if os.path.exists('feed_credentials.json'):
-              with open('feed_credentials.json', 'r') as f:
-                  creds_data = json.load(f)
-                  feed_creds = creds_data.get('feeds', {})
-          
-          urls = [line.strip() for line in open('feed.txt').readlines() if line.strip()]
-          articles = []
-          
-          for url in urls:
-              try:
-                  # Check if this feed has credentials
-                  feed_config = feed_creds.get(url, {})
-                  auth_type = feed_config.get('auth_type')
-                  
-                  # Prepare headers for authenticated feeds
-                  headers = {}
-                  if auth_type == 'api_key':
-                      headers[feed_config.get('header_name', 'X-API-Key')] = feed_config.get('api_key', '')
-                  elif auth_type == 'basic':
-                      username = feed_config.get('username', '')
-                      password = feed_config.get('password', '')
-                      auth_string = base64.b64encode(f'{username}:{password}'.encode()).decode()
-                      headers['Authorization'] = f'Basic {auth_string}'
-                  elif auth_type == 'bearer':
-                      headers['Authorization'] = f'Bearer {feed_config.get(\"token\", \"\")}'
-                  elif auth_type == 'custom_header':
-                      headers.update(feed_config.get('headers', {}))
-                  
-                  # Fetch feed with authentication if needed
-                  if headers:
-                      # Use feedparser with custom headers
-                      feed = feedparser.parse(url, request_headers=headers)
-                  else:
-                      # No authentication needed
-                      feed = feedparser.parse(url)
-                  
-                  # Process entries
-                  for entry in feed.entries[:5]:  # Top 5 per feed
-                      # Extract image from various RSS formats
-                      image_url = None
-                      
-                      # Try media:content (common in RSS)
-                      if hasattr(entry, 'media_content') and entry.media_content:
-                          image_url = entry.media_content[0].get('url')
-                      
-                      # Try media:thumbnail
-                      elif hasattr(entry, 'media_thumbnail') and entry.media_thumbnail:
-                          image_url = entry.media_thumbnail[0].get('url')
-                      
-                      # Try enclosure (podcasts/media)
-                      elif hasattr(entry, 'enclosures') and entry.enclosures:
-                          for enc in entry.enclosures:
-                              if enc.get('type', '').startswith('image/'):
-                                  image_url = enc.get('href')
-                                  break
-                      
-                      # Try looking in content/description for img tags
-                      if not image_url:
-                          import re
-                          content = entry.get('content', [{}])[0].get('value', '') if hasattr(entry, 'content') else entry.get('description', '')
-                          img_match = re.search(r'<img[^>]+src=[\\\"\\']([^\\\"\\'>]+)[\\\"\\']', content)
-                          if img_match:
-                              image_url = img_match.group(1)
-                      
-                      # Create article dict with image
-                      article = dict(entry)
-                      article['image_url'] = image_url
-                      articles.append(article)
-              except Exception as e:
-                  print(f'Error fetching feed {url}: {e}')
-                  continue
-          
-          # Save to file
-          with open('articles.json', 'w') as f:
-              json.dump(articles, f)
-          "
+          python fetch_feeds.py
 
       - name: AI Summarize & Filter
         env:
           DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
         run: |
-          python -c "
-          import json, os, re, html
-          from datetime import datetime
-          from openai import OpenAI
-          with open('articles.json') as f: articles = json.load(f)
-          
-          # YOUR INTERESTS (customize what you care about)
-          MY_TOPICS = ['AI', 'machine learning', 'technology', 'startup', 'finance', 'China', 'US']
-          
-          # Format topics as comma-separated string for prompts
-          topics_str = ', '.join(MY_TOPICS)
-          
-          # Load AI prompts from files and inject topics
-          with open('ai_system_prompt.txt', 'r') as f:
-              system_prompt = f.read().strip().format(topics=topics_str)
-          with open('ai_prompt.txt', 'r') as f:
-              prompt_template = f.read().strip()
-          
-          client = OpenAI(
-              api_key=os.environ['DEEPSEEK_API_KEY'],
-              base_url='https://api.deepseek.com'
-          )
-          
-          # Helper function to detect duplicate articles based on title similarity
-          def are_similar(title1, title2):
-              # Normalize titles: lowercase, remove punctuation, split into words
-              def normalize(t):
-                  t = t.lower()
-                  t = re.sub(r'[^a-z0-9\\s]', '', t)
-                  words = set(t.split())
-                  return words
-              
-              words1 = normalize(title1)
-              words2 = normalize(title2)
-              
-              # Calculate Jaccard similarity (intersection over union)
-              if not words1 or not words2:
-                  return False
-              
-              intersection = len(words1 & words2)
-              union = len(words1 | words2)
-              similarity = intersection / union if union > 0 else 0
-              
-              # Consider similar if >60% word overlap and at least 3 common words
-              return similarity > 0.6 and intersection >= 3
-          
-          # Group duplicate articles
-          processed_indices = set()
-          article_groups = []
-          
-          for i, a in enumerate(articles):
-              if i in processed_indices:
-                  continue
-              
-              # Simple relevance check (pre-filter)
-              if not any(t.lower() in (a['title'] + a.get('summary','')).lower() for t in MY_TOPICS):
-                  continue
-              
-              # Find similar articles
-              group = [a]
-              processed_indices.add(i)
-              
-              for j, other in enumerate(articles[i+1:], start=i+1):
-                  if j in processed_indices:
-                      continue
-                  if any(t.lower() in (other['title'] + other.get('summary','')).lower() for t in MY_TOPICS):
-                      if are_similar(a['title'], other['title']):
-                          group.append(other)
-                          processed_indices.add(j)
-              
-              article_groups.append(group)
-          
-          filtered = []
-          
-          for group in article_groups:
-              if len(group) == 1:
-                  # Single article - use original format
-                  a = group[0]
-                  articles_text = f\"Article title: {a['title']}\\nArticle URL: {a['link']}\"
-              else:
-                  # Multiple articles - format for combined processing
-                  articles_list = []
-                  for a in group:
-                      articles_list.append(f\"Article title: {a['title']}\\nArticle URL: {a['link']}\")
-                  articles_text = \"\\n\\n\".join(articles_list)
-              
-              user_message = prompt_template.format(articles=articles_text, topics=topics_str)
-              resp = client.chat.completions.create(
-                  model='deepseek-chat',
-                  messages=[
-                      {'role':'system','content':system_prompt},
-                      {'role':'user','content':user_message}
-                  ],
-                  max_tokens=200  # Increased for multiple sources with links
-              )
-              ai_response = resp.choices[0].message.content.strip()
-              
-              # Skip if AI marked as irrelevant
-              if ai_response.upper() == 'IRRELEVANT':
-                  continue
-              
-              # Extract URLs from summary if multiple sources (format: Sources: url1 url2)
-              # Remove Sources section from summary for display if present
-              if len(group) > 1 and 'Sources:' in ai_response:
-                  summary_only = ai_response.split('Sources:')[0].strip()
-              else:
-                  summary_only = ai_response
-              
-              # Use URLs from the grouped articles (more reliable than parsing AI response)
-              urls = [a['link'] for a in group]
-              
-              # Use first article's title and image, but combine URLs
-              filtered.append({
-                  'title': group[0]['title'],
-                  'url': urls[0],  # Primary URL for backward compatibility
-                  'urls': urls,  # All URLs for this story
-                  'summary': summary_only,
-                  'image_url': group[0].get('image_url')
-              })
-          
-          # Create digests directory if it doesn't exist
-          os.makedirs('digests', exist_ok=True)
-          
-          # Generate filename with date and time
-          timestamp = datetime.utcnow().strftime('%Y-%m-%d-%H-%M')
-          md_filename = f'digests/{timestamp}.md'
-          html_filename = f'digests/{timestamp}.html'
-          
-          # Save markdown digest
-          with open(md_filename, 'w') as f:
-              f.write('# Your Daily Digest\\n\\n')
-              for item in filtered[:10]:  # Top 10
-                  f.write(f'## {item[\"title\"]}\\n{item[\"summary\"]}\\n')
-                  # Write all URLs if multiple sources
-                  urls_to_write = item.get('urls', [item['url']])
-                  for url in urls_to_write:
-                      f.write(f'{url}\\n')
-                  f.write('\\n')
-          
-          # Generate HTML email from template
-          with open('email_template.html', 'r') as f:
-              html_template = f.read()
-          
-          # Format date
-          date_str = datetime.utcnow().strftime('%A, %B %d, %Y')
-          
-          # Prepare hero article (first one)
-          hero = filtered[0] if filtered else {'title':'No articles','url':'#','summary':'No relevant articles found today.','image_url':None, 'urls': ['#']}
-          
-          # Extract source from URL (simplified)
-          def get_source(url):
-              match = re.search(r'https?://([^/]+)', url)
-              return match.group(1).replace('www.', '') if match else 'Unknown'
-          
-          # Handle multiple sources for hero
-          hero_urls = hero.get('urls', [hero.get('url', '#')])
-          if len(hero_urls) > 1:
-              hero_sources_list = [get_source(url) for url in hero_urls]
-              hero_source = ' • '.join(hero_sources_list)
-          else:
-              hero_source = get_source(hero.get('url', '#'))
-          
-          # Add hero image if available
-          hero_image_html = ''
-          if hero.get('image_url'):
-              safe_hero_alt = html.escape(hero['title'])
-              hero_image_html = f'<img src=\"{hero[\"image_url\"]}\" alt=\"{safe_hero_alt}\">'
-          
-          # Build remaining articles HTML
-          articles_html = ''
-          for item in filtered[1:10]:  # Articles 2-10
-              urls_to_show = item.get('urls', [item['url']])
-              # Build source string - show multiple sources if available
-              if len(urls_to_show) > 1:
-                  sources_list = [get_source(url) for url in urls_to_show]
-                  source = ' • '.join(sources_list)
-              else:
-                  source = get_source(item['url'])
-              
-              # Escape HTML in summary to prevent injection
-              safe_summary = html.escape(item['summary'])
-              safe_title = html.escape(item['title'])
-              # Add image if available
-              img_html = ''
-              if item.get('image_url'):
-                  safe_alt = html.escape(item['title'])
-                  img_html = f'<img src=\"{item[\"image_url\"]}\" alt=\"{safe_alt}\">'
-              
-              # Build links - if multiple sources, create multiple links
-              if len(urls_to_show) > 1:
-                  title_links = []
-                  for idx, url in enumerate(urls_to_show):
-                      source_name = get_source(url)
-                      title_links.append(f'<a href=\"{url}\">{source_name}</a>')
-                  title_with_links = f'{safe_title} ({\", \".join(title_links)})'
-              else:
-                  title_with_links = f'<a href=\"{item[\"url\"]}\">{safe_title}</a>'
-              
-              # Replace {{IMAGE}} placeholder in the article template
-              article_template = '<div class=\"article\">{{IMAGE}}<h4>{{TITLE}}</h4><p>{{SUMMARY}}</p><p class=\"meta\">{{SOURCE}}</p></div>'
-              article_html = article_template.replace('{{IMAGE}}', img_html)
-              article_html = article_html.replace('{{TITLE}}', title_with_links)
-              article_html = article_html.replace('{{SUMMARY}}', safe_summary)
-              article_html = article_html.replace('{{SOURCE}}', html.escape(source))
-              articles_html += article_html
-          
-          # Replace template variables
-          html_content = html_template.replace('{{DATE}}', date_str)
-          html_content = html_content.replace('{{HERO_TITLE}}', html.escape(hero['title']))
-          html_content = html_content.replace('{{HERO_SOURCE}}', html.escape(hero_source))
-          html_content = html_content.replace('{{HERO_IMAGE}}', hero_image_html)
-          html_content = html_content.replace('{{HERO_SUMMARY}}', html.escape(hero['summary']))
-          html_content = html_content.replace('{{HERO_URL}}', hero['url'])
-          # Replace Mustache block {{#ARTICLES}}...{{/ARTICLES}} with generated articles
-          html_content = re.sub(r'\{\{#ARTICLES\}\}.*?\{\{/ARTICLES\}\}', articles_html, html_content, flags=re.DOTALL)
-          
-          # Save HTML digest
-          with open(html_filename, 'w') as f:
-              f.write(html_content)
-          
-          # Save filenames for next steps
-          with open('digest_filename.txt', 'w') as f:
-              f.write(md_filename)
-          with open('digest_html_filename.txt', 'w') as f:
-              f.write(html_filename)
-          "
+          python generate_digest.py
 
       - name: Commit digest
         run: |

@@ -1,0 +1,15 @@
+{
+  "topics": [
+    "AI",
+    "Machine Learning",
+    "Technology",
+    "Startup",
+    "Finance",
+    "Science"
+  ],
+  "limits": {
+    "articles_per_feed": 10,
+    "final_digest_count": 10
+  }
+}
+

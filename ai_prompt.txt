@@ -1,4 +1,14 @@
-Evaluate this article title for relevance to {topics} topics. If relevant, provide a structured summary. If not relevant, respond with "IRRELEVANT".
+Evaluate the article title(s) below for relevance to {topics} topics.
 
-Article title: {title}
+If relevant:
+1. Assign a priority score (0-100) based on importance and novelty.
+2. Provide a structured summary.
+3. If multiple articles cover the same story, combine them.
 
+Output format:
+SCORE: [Number]
+[Summary]
+
+If not relevant, respond with "IRRELEVANT".
+
+{articles}
